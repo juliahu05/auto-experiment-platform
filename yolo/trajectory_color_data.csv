@@ -1,0 +1,61 @@
+import cv2
+import csv
+import numpy as np
+import matplotlib.pyplot as plt
+
+video_path = "trace2026-06-02_144348_180.mp4"
+csv_path = "trajectory_color_data.csv"
+
+cap = cv2.VideoCapture(video_path)
+trajectory_data = []
+
+frame_id = 0
+while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret: break
+    frame_id += 1
+
+    # 将图像转换为 HSV 色彩空间
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+
+    # 定义红色的 HSV 范围 (红色在 HSV 模型中分布在两端)
+    lower_red1 = np.array([0, 120, 70])
+    upper_red1 = np.array([10, 255, 255])
+    lower_red2 = np.array([170, 120, 70])
+    upper_red2 = np.array([180, 255, 255])
+
+    # 根据阈值提取红色区域
+    mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
+    mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+    mask = mask1 + mask2
+
+    # 寻找红色区域的轮廓
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    if contours:
+        # 找到面积最大的红色轮廓（过滤掉噪点）
+        largest_contour = max(contours, key=cv2.contourArea)
+        
+        if cv2.contourArea(largest_contour) > 10: # 面积大于10像素才认为是小球
+            # 计算轮廓的形心（中心坐标）
+            M = cv2.moments(largest_contour)
+            if M["m00"] != 0:
+                cX = int(M["m10"] / M["m00"])
+                cY = int(M["m01"] / M["m00"])
+                
+                trajectory_data.append([frame_id, cX, cY])
+
+cap.release()
+
+# 导出数据并绘图
+if trajectory_data:
+    with open(csv_path, 'w', newline='') as f:
+        csv.writer(f).writerows([['Frame', 'X', 'Y']] + trajectory_data)
+        
+    x_coords = [p[1] for p in trajectory_data]
+    y_coords = [p[2] for p in trajectory_data]
+    plt.scatter(x_coords, y_coords, color='red', s=10)
+    plt.gca().invert_yaxis()
+    plt.title("Projectile Trajectory (HSV Color Tracking)")
+    plt.savefig("hsv_trajectory.png")
+    print("已保存")
